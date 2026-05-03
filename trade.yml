@@ -1,0 +1,94 @@
+name: APEX PROP — GhoulHQ Prop Firm Division
+
+on:
+  # 5-minute candle closes on Bybit
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 minutes → 5M timeframe
+
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (no real orders)'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  trade:
+    name: Run Prop Bot (Leader → Supervisor → Trader → Backtester)
+    runs-on: ubuntu-latest
+    timeout-minutes: 4   # must finish before next 5min candle
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run APEX Prop Bot
+        env:
+          BYBIT_API_KEY:        ${{ secrets.BYBIT_API_KEY }}
+          API_SECRET:           ${{ secrets.BYBIT_API_SECRET }}
+          BYBIT_TESTNET:        ${{ vars.BYBIT_TESTNET }}
+          GIST_TOKEN:           ${{ secrets.GIST_TOKEN }}
+          GIST_ID:              ${{ vars.GIST_ID }}
+
+          # ── Timeframe ─────────────────────────────────────
+          TIMEFRAME:            "5"
+
+          # ── Tokens (Prop Firm focus list) ─────────────────
+          TOKENS:               ${{ vars.TOKENS || 'HYPEUSDT,BTCUSDT,VIRTUALUSDT,ZECUSDT' }}
+
+          # ── Risk / Sizing ─────────────────────────────────
+          LEVERAGE:             ${{ vars.LEVERAGE || '1' }}
+          POSITION_SIZE_PCT:    ${{ vars.POSITION_SIZE_PCT || '20' }}
+          MAX_POSITIONS:        ${{ vars.MAX_POSITIONS || '4' }}
+          MAX_PYRAMID:          ${{ vars.MAX_PYRAMID || '3' }}
+          MAX_DD_PCT:           ${{ vars.MAX_DD_PCT || '10' }}
+          DAILY_DD_PCT:         ${{ vars.DAILY_DD_PCT || '5' }}
+
+          # ── Strategy (ATR-based) ──────────────────────────
+          EMA_LENGTH:           ${{ vars.EMA_LENGTH || '200' }}
+          RSI_LENGTH:           ${{ vars.RSI_LENGTH || '14' }}
+          RSI_OB:               ${{ vars.RSI_OB || '70' }}
+          RSI_OS:               ${{ vars.RSI_OS || '30' }}
+          ATR_LENGTH:           ${{ vars.ATR_LENGTH || '14' }}
+          ATR_SL_MULT:          ${{ vars.ATR_SL_MULT || '1.0' }}
+          ATR_TP1_MULT:         ${{ vars.ATR_TP1_MULT || '2.0' }}
+          ATR_TP2_MULT:         ${{ vars.ATR_TP2_MULT || '4.0' }}
+          ATR_TP3_MULT:         ${{ vars.ATR_TP3_MULT || '6.0' }}
+          ATR_TRAIL:            ${{ vars.ATR_TRAIL || '1.5' }}
+          TP1_CLOSE_PCT:        ${{ vars.TP1_CLOSE_PCT || '50' }}
+          TP2_CLOSE_PCT:        ${{ vars.TP2_CLOSE_PCT || '30' }}
+
+          # ── Challenge target ──────────────────────────────
+          MONTHLY_TARGET_PCT:   ${{ vars.MONTHLY_TARGET_PCT || '10' }}
+
+          # ── Dry run flag ──────────────────────────────────
+          DRY_RUN:              ${{ inputs.dry_run || 'false' }}
+
+        run: |
+          echo "======================================"
+          echo " APEX PROP | GhoulHQ Prop Firm Div."
+          echo " Start: $(date -u)"
+          echo " Testnet: $BYBIT_TESTNET"
+          echo " Tokens:  $TOKENS"
+          echo " TF:      ${TIMEFRAME}m"
+          echo "======================================"
+          python backend/bot.py
+
+      - name: Upload run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prop-log-${{ github.run_number }}
+          path: "*.log"
+          retention-days: 30
+          if-no-files-found: ignore
